@@ -1,9 +1,11 @@
-from flask import Flask, request
+from flask import Flask, request, render_template_string
 from werkzeug.utils import secure_filename
 import os
-from PIL import Image
 import cv2
 import numpy as np
+import base64
+from googleapiclient.discovery import build
+
 
 app = Flask(__name__)
 
@@ -31,6 +33,39 @@ def index():
     '''
 
 
+def get_shopping_links(extracted_image_path):
+    # Your Google Custom Search Engine API key and Search Engine ID
+    api_key = "AIzaSyDGz61CvLVKMrMstBIWpRJHYP6ddJX4CY4"
+    search_engine_id = "b1e2e7dd0f3564e9f"
+
+    # Assuming you want to search for "T-Shirts"
+    query = "T-Shirts"
+
+    # Creating a resource object for interacting with the API
+    service = build("customsearch", "v1", developerKey=api_key)
+
+    # Encoding the image content in Base64
+    with open(extracted_image_path, "rb") as image_file:
+        encoded_image = base64.b64encode(image_file.read()).decode()
+
+    # The API call
+    # The API call
+    res = service.cse().list(
+        q=query,
+        cx=search_engine_id,
+        searchType="image",
+        imgType="photo",
+        imgSize="MEDIUM",  # Corrected value here
+        num=10,  # Number of results
+        safe="off"  # Turn off SafeSearch
+    ).execute()
+
+
+    # Extracting URLs from the search results
+    links = [item['link'] for item in res.get('items', [])]
+    return links
+
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'image' not in request.files:
@@ -46,7 +81,18 @@ def upload_file():
         # Save the extracted shirt image in the my_flask_app directory
         output_path = os.path.join(base_path, "extracted_" + filename)
         extract_shirt_from_image(filepath, output_path)
-        return 'File uploaded and processed.'
+        shopping_links = get_shopping_links(output_path)
+        return render_template_string('''
+            <!DOCTYPE html>
+            <html>
+                <body>
+                    <h1>Similar T-Shirts</h1>
+                    {% for link in shopping_links %}
+                        <p><a href="{{ link }}">{{ link }}</a></p>
+                    {% endfor %}
+                </body>
+            </html>
+        ''', shopping_links=shopping_links)
 
 
 def extract_shirt_from_image(input_image_path, output_image_path):
